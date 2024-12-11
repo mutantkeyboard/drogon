@@ -14,6 +14,8 @@ option(BUILD_BROTLI "Build Brotli" ON)
 option(BUILD_YAML_CONFIG "Build yaml config" ON)
 option(USE_SUBMODULE "Use trantor as a submodule" ON)
 option(USE_STATIC_LIBS_ONLY "Use only static libraries as dependencies" OFF)
+option(BUILD_ZSTD "Build with ZSTD support" ON)
+
 
 include(CMakeDependentOption)
 CMAKE_DEPENDENT_OPTION(BUILD_POSTGRESQL "Build with postgresql support" ON "BUILD_ORM" OFF)
@@ -239,6 +241,24 @@ if (NOT ${CMAKE_SYSTEM_NAME} STREQUAL "FreeBSD"
 endif (NOT ${CMAKE_SYSTEM_NAME} STREQUAL "FreeBSD"
     AND NOT ${CMAKE_SYSTEM_NAME} STREQUAL "OpenBSD"
     AND NOT WIN32)
+
+    if (BUILD_ZSTD)
+    find_package(ZSTD)
+    if (ZSTD_FOUND)
+        message(STATUS "ZSTD found")
+        try_compile(zstd_compiles ${CMAKE_BINARY_DIR}/cmaketest
+            ${PROJECT_SOURCE_DIR}/cmake/tests/zstd_version_test.cc
+            LINK_LIBRARIES ZSTD::ZSTD
+            OUTPUT_VARIABLE ZSTD_COMPILE_OUTPUT)
+        if (zstd_compiles)
+            add_definitions(-DUSE_ZSTD=1)
+        else ()
+            message(FATAL_ERROR "ZSTD lib error:\n${ZSTD_COMPILE_OUTPUT}")
+        endif ()
+    else ()
+        message(STATUS "ZSTD not found")
+    endif (ZSTD_FOUND)
+endif (BUILD_ZSTD)
 
 if (BUILD_BROTLI)
     find_package(Brotli)
@@ -486,6 +506,18 @@ if (BUILD_REDIS)
 
     endif (Hiredis_FOUND)
 endif (BUILD_REDIS)
+
+
+if(BUILD_ZSTD)
+    find_package(ZSTD)
+    if(ZSTD_FOUND)
+        message(STATUS "ZSTD found")
+        add_definitions(-DUSE_ZSTD)
+        target_link_libraries(${PROJECT_NAME} PRIVATE ZSTD::ZSTD)
+    else()
+        message(STATUS "ZSTD not found")
+    endif(ZSTD_FOUND)
+endif(BUILD_ZSTD)
 
 if (NOT Hiredis_FOUND)
     set(DROGON_SOURCES
@@ -805,6 +837,7 @@ install(FILES
     "${CMAKE_CURRENT_SOURCE_DIR}/cmake_modules/FindFilesystem.cmake"
     "${CMAKE_CURRENT_SOURCE_DIR}/cmake/DrogonUtilities.cmake"
     "${CMAKE_CURRENT_SOURCE_DIR}/cmake/ParseAndAddDrogonTests.cmake"
+    "${CMAKE_CURRENT_SOURCE_DIR}/cmake_modules/FindZSTD.cmake"
     DESTINATION "${INSTALL_DROGON_CMAKE_DIR}"
     COMPONENT dev)
 
