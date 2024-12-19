@@ -32,6 +32,15 @@ class DROGON_EXPORT ZstdFilter : public HttpFilter<ZstdFilter>
     static constexpr size_t CHUNK_SIZE = 4 * 1024;
     std::string compressData(const std::string &data);
     std::string decompressData(const std::string& data);
+    std::string compressStream(std::istream &input);
+    std::string decompressStream(std::istream &input);
+    std::string compressDict(const std::string &data, const std::vector<char> &dictData);
+    std::string decompressDict(const std::string &data, const std::vector<char> &dictData);
+    std::string advancedCompressData(const std::string &data);
+    std::string advancedDecompressData(const std::string& data);
+    std::string advancedCompressStream(std::istream &input);
+    std::string advancedDecompressStream(std::istream &input);
+
     bool shouldCompress(const drogon::HttpResponsePtr &resp);
     bool shouldCompress(const drogon::HttpRequestPtr &req);
 };
