@@ -23,25 +23,41 @@ class DROGON_EXPORT ZstdFilter : public HttpFilter<ZstdFilter>
 {
   public:
     ZstdFilter() = default;
+    virtual ~ZstdFilter();
     void doFilter(const HttpRequestPtr &req,
                   FilterCallback &&fcb,
                   FilterChainCallback &&fccb) override;
 
-  private:
-    static constexpr int COMPRESSION_LEVEL = 3;  // this can be adjusted
-    static constexpr size_t CHUNK_SIZE = 4 * 1024;
-    std::string compressData(const std::string &data);
-    std::string decompressData(const std::string& data);
-    std::string compressStream(std::istream &input);
-    std::string decompressStream(std::istream &input);
-    std::string compressDict(const std::string &data, const std::vector<char> &dictData);
-    std::string decompressDict(const std::string &data, const std::vector<char> &dictData);
-    std::string advancedCompressData(const std::string &data);
-    std::string advancedDecompressData(const std::string& data);
-    std::string advancedCompressStream(std::istream &input);
-    std::string advancedDecompressStream(std::istream &input);
+    bool initWithDict(const std::string &dictPath, int compressionLevel = 3);
 
-    bool shouldCompress(const drogon::HttpResponsePtr &resp);
-    bool shouldCompress(const drogon::HttpRequestPtr &req);
+  private:
+    int compressionLevel_ = 3;  // this can be adjusted
+    size_t maxCompressionSize_{0};
+
+    // Zstd compression context
+    ZSTD_CCtx *cctx_{nullptr};
+    ZSTD_DCtx *dctx_{nullptr};
+
+    // Zstd dictionary support
+    ZSTD_CDict *cDict_{nullptr};
+    ZSTD_DDict *dDict_{nullptr};
+    std::vector<char> dictData_;
+
+    // Zstd compression methods
+    // NOTE: We're using std::vector<char> over std::string to allow
+    // preservation of iterators, references, etc Refer to:
+    // https://stackoverflow.com/a/12609370/1737811
+    std::vector<char> basicCompress(const char *data, size_t size);
+    std::vector<char> advancedCompress(const char *data, size_t size);
+    std::vector<char> compressWithDict(const char *data, size_t size);
+
+    // Zstd decompression methods
+    std::vector<char> basicDecompress(const char *data, size_t size);
+    std::vector<char> advancedDecompress(const char *data, size_t size);
+    std::vector<char> decompressWithDict(const char *data, size_t size);
+
+    // utility methods
+    void initCompressionContext();
+    void cleanupCompressionContext();
 };
 }  // namespace drogon

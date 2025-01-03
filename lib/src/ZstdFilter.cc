@@ -18,346 +18,295 @@
 #include <zstd.h>
 #include <string>
 #include <memory>
+#include <fstream>
 
 using namespace drogon;
+
+std::vector<char> drogon::ZstdFilter::basicCompress(const char *data,
+                                                    size_t size)
+{
+    size_t maxSize = ZSTD_compressBound(size);
+    std::vector<char> compressed(maxSize);
+    size_t compressedSize = ZSTD_compress(
+        compressed.data(), maxSize, data, size, compressionLevel_);
+
+    if (ZSTD_isError(compressedSize))
+    {
+        LOG_ERROR << "Zstd compression error: "
+                  << ZSTD_getErrorName(compressedSize);
+        return std::vector<char>();
+    }
+
+    compressed.resize(compressedSize);
+    return compressed;
+}
+
+std::vector<char> drogon::ZstdFilter::advancedCompress(const char *data,
+                                                       size_t size)
+{
+    if (!cctx_)
+        initCompressionContext();
+
+    size_t maxSize = ZSTD_compressBound(size);
+    std::vector<char> compressed(maxSize);
+
+    // Using ZSTD_compress2 for more control over the compression process
+    size_t compressedSize =
+        ZSTD_compress2(cctx_, compressed.data(), maxSize, data, size);
+
+    if (ZSTD_isError(compressedSize))
+    {
+        LOG_ERROR << "Zstd compression error: "
+                  << ZSTD_getErrorName(compressedSize);
+        return std::vector<char>();
+    }
+
+    compressed.resize(compressedSize);
+
+    return compressed;
+}
+
+std::vector<char> drogon::ZstdFilter::compressWithDict(const char *data,
+                                                       size_t size)
+{
+    if (!cDict_)
+    {
+        LOG_ERROR << "Zstd dictionary not initialized";
+        return std::vector<char>();
+    }
+    size_t maxSize = ZSTD_compressBound(size);
+    std::vector<char> compressed(maxSize);
+
+    size_t compressedSize = ZSTD_compress_usingCDict(
+        cctx_, compressed.data(), maxSize, data, size, cDict_);
+
+    if (ZSTD_isError(compressedSize))
+    {
+        LOG_ERROR << "Zstd compression error: "
+                  << ZSTD_getErrorName(compressedSize);
+        return std::vector<char>();
+    }
+
+    compressed.resize(compressedSize);
+    return compressed;
+}
+
+std::vector<char> drogon::ZstdFilter::basicDecompress(const char *data,
+                                                      size_t size)
+{
+    size_t decompressedSize = ZSTD_getFrameContentSize(data, size);
+    if (decompressedSize == ZSTD_CONTENTSIZE_ERROR)
+    {
+        LOG_ERROR << "Zstd decompression error: invalid frame content size";
+        return std::vector<char>();
+    }
+    if (decompressedSize == ZSTD_CONTENTSIZE_UNKNOWN)
+    {
+        LOG_ERROR << "Zstd decompression error: unknown frame content size";
+        return std::vector<char>();
+    }
+
+    std::vector<char> decompressed(decompressedSize);
+    size_t actualSize =
+        ZSTD_decompress(decompressed.data(), decompressedSize, data, size);
+    if (ZSTD_isError(actualSize))
+    {
+        LOG_ERROR << "Zstd decompression error: "
+                  << ZSTD_getErrorName(actualSize);
+        return std::vector<char>();
+    }
+
+    decompressed.resize(actualSize);
+    return decompressed;
+}
+
+std::vector<char> drogon::ZstdFilter::advancedDecompress(const char *data,
+                                                         size_t size)
+{
+    if (!dctx_)
+        initCompressionContext();
+
+    size_t decompressedSize = ZSTD_getFrameContentSize(data, size);
+    if (decompressedSize == ZSTD_CONTENTSIZE_ERROR)
+    {
+        LOG_ERROR << "Zstd decompression error: invalid frame content size";
+        return std::vector<char>();
+    }
+    if (decompressedSize == ZSTD_CONTENTSIZE_UNKNOWN)
+    {
+        LOG_ERROR << "Zstd decompression error: unknown frame content size";
+        return std::vector<char>();
+    }
+
+    std::vector<char> decompressed(decompressedSize);
+    size_t actualSize = ZSTD_decompressDCtx(
+        dctx_, decompressed.data(), decompressedSize, data, size);
+    if (ZSTD_isError(actualSize))
+    {
+        LOG_ERROR << "Zstd decompression error: "
+                  << ZSTD_getErrorName(actualSize);
+        return std::vector<char>();
+    }
+    decompressed.resize(actualSize);
+    return decompressed;
+}
+
+std::vector<char> drogon::ZstdFilter::decompressWithDict(const char *data,
+                                                         size_t size)
+{
+    if (!dDict_)
+    {
+        LOG_ERROR << "Zstd dictionary not initialized";
+        return std::vector<char>();
+    }
+
+    size_t decompressedSize = ZSTD_getFrameContentSize(data, size);
+    if (decompressedSize == ZSTD_CONTENTSIZE_ERROR)
+    {
+        LOG_ERROR << "Zstd decompression error: invalid frame content size";
+        return std::vector<char>();
+    }
+    if (decompressedSize == ZSTD_CONTENTSIZE_UNKNOWN)
+    {
+        LOG_ERROR << "Zstd decompression error: unknown frame content size";
+        return std::vector<char>();
+    }
+
+    std::vector<char> decompressed(decompressedSize);
+    size_t actualSize = ZSTD_decompress_usingDDict(
+        dctx_, decompressed.data(), decompressedSize, data, size, dDict_);
+    if (ZSTD_isError(actualSize))
+    {
+        LOG_ERROR << "Zstd decompression error: "
+                  << ZSTD_getErrorName(actualSize);
+        return std::vector<char>();
+    }
+
+    decompressed.resize(actualSize);
+    return decompressed;
+}
+
+void drogon::ZstdFilter::initCompressionContext()
+{
+    cleanupCompressionContext();
+
+    cctx_ = ZSTD_createCCtx();
+    dctx_ = ZSTD_createDCtx();
+
+    if (!cctx_ || !dctx_)
+    {
+        LOG_ERROR << "Failed to create Zstd compression context";
+        exit(1);
+    }
+
+    ZSTD_CCtx_setParameter(cctx_, ZSTD_c_compressionLevel, compressionLevel_);
+    ZSTD_CCtx_setParameter(cctx_,
+                           ZSTD_c_checksumFlag,
+                           1);  // enable content checksum
+}
+
+void drogon::ZstdFilter::cleanupCompressionContext()
+{
+    if (cctx_)
+        ZSTD_freeCCtx(cctx_);
+    if (dctx_)
+        ZSTD_freeDCtx(dctx_);
+    if (cDict_)
+        ZSTD_freeCDict(cDict_);
+    if (dDict_)
+        ZSTD_freeDDict(dDict_);
+
+    cctx_ = nullptr;
+    dctx_ = nullptr;
+    cDict_ = nullptr;
+    dDict_ = nullptr;
+}
+
+drogon::ZstdFilter::~ZstdFilter()
+{
+    cleanupCompressionContext();
+}
 
 void drogon::ZstdFilter::doFilter(const HttpRequestPtr &req,
                                   FilterCallback &&fcb,
                                   FilterChainCallback &&fccb)
 {
-    if (req->method() == drogon::Post && this->shouldCompress(req))
+    if (req->method() != drogon::HttpMethod::Post)
     {
-        // Handle request body compression
+        fccb();
+        return;
+    }
+    try
+    {
         auto body = req->getBody();
-        if (!body.empty())
-        {
-            try
-            {
-                std::string decompressed =
-                    decompressData(std::string(body.data(), body.length()));
-                req->setBody(decompressed);
-            }
-            catch (const std::exception &e)
-            {
-                auto resp = drogon::HttpResponse::newHttpResponse();
-                resp->setStatusCode(drogon::k400BadRequest);
-                resp->setBody("Invalid compressed data");
-                fcb(resp);
-                return;
-            }
-        }
-    }
+        std::vector<char> compressedData;
 
-    // Modify the filter callback to handle response compression
-    fccb();
-    fcb = [this, fcb = std::move(fcb)](const drogon::HttpResponsePtr &resp) {
-        if (this->shouldCompress(resp))
+        auto mode = req->getHeader("X-Compression-Mode");
+        if (mode == "dict")
         {
-            auto body = resp->body();
-            if (!body.empty())
-            {
-                try
-                {
-                    std::string compressed =
-                        compressData(std::string(body.data(), body.length()));
-                    resp->setBody(compressed);
-                    resp->addHeader("Content-Encoding", "zstd");
-                }
-                catch (const std::exception &e)
-                {
-                    // If compression fails, send uncompressed
-                    LOG_ERROR << "Compression failed: " << e.what();
-                }
-            }
+            compressedData = compressWithDict(body.data(), body.length());
         }
+        else if (mode == "advanced")
+        {
+            compressedData = advancedCompress(body.data(), body.length());
+        }
+        else
+        {
+            compressedData = basicCompress(body.data(), body.length());
+        }
+
+        req->setBody(std::string(compressedData.data(), compressedData.size()));
+        req->addHeader("Content-Length", std::to_string(compressedData.size()));
+        req->addHeader("X-Compression-Mode", mode);
+        req->addHeader("Content-Encoding", "zstd");
+        fccb();
+    }
+    catch (const std::exception &ex)
+    {
+        auto resp = drogon::HttpResponse::newHttpResponse();
+        resp->setStatusCode(drogon::HttpStatusCode::k400BadRequest);
+        resp->setBody("Compression error: " + std::string(ex.what()));
         fcb(resp);
-    };
+    }
 }
 
-std::string ZstdFilter::compressData(const std::string &data)
+bool drogon::ZstdFilter::initWithDict(const std::string &dictPath,
+                                      int compressionLevel)
 {
-    size_t const cBuffSize = ZSTD_compressBound(data.size());
-    std::string compressed(cBuffSize, '\0');
+    compressionLevel_ = compressionLevel;
 
-    size_t const cSize = ZSTD_compress(
-        &compressed[0], cBuffSize, data.data(), data.size(), COMPRESSION_LEVEL);
-
-    if (ZSTD_isError(cSize))
+    // Load the dictionary
+    std::ifstream dictFile(dictPath, std::ios::binary | std::ios::ate);
+    if (!dictFile)
     {
-        throw std::runtime_error(std::string("Compression error: ") +
-                                 ZSTD_getErrorName(cSize));
+        LOG_ERROR << "Failed to open Zstd dictionary file: " << dictPath;
+        return false;
     }
 
-    compressed.resize(cSize);
-    return compressed;
+    // Read the dictionary file into memory
+    size_t dictSize = dictFile.tellg();
+    dictFile.seekg(0, std::ios::beg);
+
+    dictData_.resize(dictSize);
+    dictFile.read(dictData_.data(), dictSize);
+
+    // Create a Zstd dictionary from the loaded data
+    cDict_ = ZSTD_createCDict(dictData_.data(), dictSize, compressionLevel_);
+    if (!cDict_)
+    {
+        LOG_ERROR << "Failed to create Zstd compression dictionary";
+        return false;
+    }
+
+    dDict_ = ZSTD_createDDict(dictData_.data(), dictSize);
+    if (!dDict_)
+    {
+        ZSTD_freeCDict(cDict_);
+        cDict_ = nullptr;
+        LOG_ERROR << "Failed to create Zstd decompression dictionary";
+        return false;
+    }
+
+    initCompressionContext();
+    return true;
 }
-
-std::string ZstdFilter::decompressData(const std::string &data)
-{
-    unsigned long long const rSize =
-        ZSTD_getFrameContentSize(data.data(), data.size());
-
-    if (rSize == ZSTD_CONTENTSIZE_ERROR || rSize == ZSTD_CONTENTSIZE_UNKNOWN)
-    {
-        throw std::runtime_error("Invalid compressed data");
-    }
-
-    std::string decompressed(rSize, '\0');
-    size_t const dSize =
-        ZSTD_decompress(&decompressed[0], rSize, data.data(), data.size());
-
-    if (ZSTD_isError(dSize))
-    {
-        throw std::runtime_error(std::string("Decompression error: ") +
-                                 ZSTD_getErrorName(dSize));
-    }
-
-    decompressed.resize(dSize);
-    return decompressed;
-}
-
-bool ZstdFilter::shouldCompress(const drogon::HttpResponsePtr &resp)
-{
-    auto contentType = resp->getContentType();
-    return (contentType == drogon::CT_APPLICATION_JSON ||
-            contentType == drogon::CT_TEXT_PLAIN ||
-            contentType == drogon::CT_TEXT_HTML) &&
-           resp->body().length() >
-               1024;  // Only compress responses larger than 1KB
-}
-
-std::string ZstdFilter::compressStream(std::istream &input)
-{
-    ZSTD_CCtx *cctx = ZSTD_createCCtx();
-    if (!cctx) {
-        throw std::runtime_error("Failed to create ZSTD compression context");
-    }
-
-    std::ostringstream output;
-
-    const size_t bufferSize = ZSTD_CStreamOutSize();
-    std::vector<char> inBuffer(bufferSize);
-    std::vector<char> outBuffer(bufferSize);
-
-    ZSTD_inBuffer inputBuffer = {inBuffer.data(), 0, 0};
-    ZSTD_outBuffer outputBuffer = {outBuffer.data(), outBuffer.size(), 0};
-
-    while (input.good()) {
-        input.read(inBuffer.data(), bufferSize);
-        inputBuffer.size = input.gcount();
-        inputBuffer.pos = 0;
-
-        while (inputBuffer.pos < inputBuffer.size) {
-            outputBuffer.pos = 0;
-            size_t ret = ZSTD_compressStream2(cctx, &outputBuffer, &inputBuffer, ZSTD_e_continue);
-            if (ZSTD_isError(ret)) {
-                ZSTD_freeCCtx(cctx);
-                throw std::runtime_error(std::string("Compression error: ") + ZSTD_getErrorName(ret));
-            }
-            output.write(outBuffer.data(), outputBuffer.pos);
-        }
-    }
-
-    outputBuffer.pos = 0;
-    size_t ret = ZSTD_endStream(cctx, &outputBuffer);
-    if (ZSTD_isError(ret)) {
-        ZSTD_freeCCtx(cctx);
-        throw std::runtime_error(std::string("Compression error: ") + ZSTD_getErrorName(ret));
-    }
-    output.write(outBuffer.data(), outputBuffer.pos);
-
-    ZSTD_freeCCtx(cctx);
-}
-
-std::string ZstdFilter::decompressStream(std::istream &input)
-{
-    ZSTD_DCtx *dctx = ZSTD_createDCtx();
-    if (!dctx) {
-        throw std::runtime_error("Failed to create ZSTD decompression context");
-    }
-
-    std::ostringstream output;
-
-    const size_t bufferSize = ZSTD_DStreamOutSize();
-    std::vector<char> inBuffer(bufferSize);
-    std::vector<char> outBuffer(bufferSize);
-
-    ZSTD_inBuffer inputBuffer = {inBuffer.data(), 0, 0};
-    ZSTD_outBuffer outputBuffer = {outBuffer.data(), outBuffer.size(), 0};
-
-    while (input.good()) {
-        input.read(inBuffer.data(), bufferSize);
-        inputBuffer.size = input.gcount();
-        inputBuffer.pos = 0;
-
-        while (inputBuffer.pos < inputBuffer.size) {
-            outputBuffer.pos = 0;
-            size_t ret = ZSTD_decompressStream(dctx, &outputBuffer, &inputBuffer);
-            if (ZSTD_isError(ret)) {
-                ZSTD_freeDCtx(dctx);
-                throw std::runtime_error(std::string("Decompression error: ") + ZSTD_getErrorName(ret));
-            }
-            output.write(outBuffer.data(), outputBuffer.pos);
-        }
-    }
-
-    ZSTD_freeDCtx(dctx);
-}
-
-std::string ZstdFilter::advancedCompressData(const std::string &data)
-{
-    ZSTD_CCtx *cctx = ZSTD_createCCtx();
-    if (!cctx)
-    {
-        throw std::runtime_error("Failed to create ZSTD compression context");
-    }
-
-    size_t bound = ZSTD_compressBound(data.size());
-    std::string compressedData(bound, '\0');
-
-    size_t compressedSize = ZSTD_compressCCtx(cctx,
-                                              &compressedData[0],
-                                              compressedData.size(),
-                                              data.data(),
-                                              data.size(),
-                                              COMPRESSION_LEVEL);
-
-    ZSTD_freeCCtx(cctx);
-
-    if (ZSTD_isError(compressedSize))
-    {
-        throw std::runtime_error(std::string("Compression error: ") +
-                                 ZSTD_getErrorName(compressedSize));
-    }
-
-    compressedData.resize(compressedSize);
-    return compressedData;
-}
-
-std::string ZstdFilter::advancedDecompressData(const std::string &data)
-{
-    ZSTD_DCtx *dctx = ZSTD_createDCtx();
-    if (!dctx)
-    {
-        throw std::runtime_error("Failed to create ZSTD decompression context");
-    }
-
-    size_t capacity = ZSTD_getFrameContentSize(data.data(), data.size());
-    if (capacity == ZSTD_CONTENTSIZE_ERROR)
-    {
-        ZSTD_freeDCtx(dctx);
-        throw std::runtime_error("Invalid data for decompression");
-    }
-    else if (capacity == ZSTD_CONTENTSIZE_UNKNOWN)
-    {
-        ZSTD_freeDCtx(dctx);
-        throw std::runtime_error("Original size unknown");
-    }
-
-    std::string decompressedData(capacity, '\0');
-    size_t decompressedSize = ZSTD_decompressDCtx(
-        dctx, &decompressedData[0], capacity, data.data(), data.size());
-
-    ZSTD_freeDCtx(dctx);
-
-    if (ZSTD_isError(decompressedSize))
-    {
-        throw std::runtime_error(std::string("Decompression error: ") +
-                                 ZSTD_getErrorName(decompressedSize));
-    }
-
-    decompressedData.resize(decompressedSize);
-    return decompressedData;
-}
-
-std::string ZstdFilter::advancedCompressStream(std::istream &input)
-{
-    ZSTD_CCtx *cctx = ZSTD_createCCtx();
-    if (!cctx)
-    {
-        throw std::runtime_error("Failed to create ZSTD compression context");
-    }
-
-    std::ostringstream output;
-
-    const size_t bufferSize = ZSTD_CStreamOutSize();
-    std::vector<char> inBuffer(bufferSize);
-    std::vector<char> outBuffer(bufferSize);
-
-    ZSTD_inBuffer inputBuffer = {inBuffer.data(), 0, 0};
-    ZSTD_outBuffer outputBuffer = {outBuffer.data(), outBuffer.size(), 0};
-
-    while (input.good())
-    {
-        input.read(inBuffer.data(), bufferSize);
-        inputBuffer.size = input.gcount();
-        inputBuffer.pos = 0;
-
-        while (inputBuffer.pos < inputBuffer.size)
-        {
-            outputBuffer.pos = 0;
-            size_t ret = ZSTD_compressStream(cctx, &outputBuffer, &inputBuffer);
-            if (ZSTD_isError(ret))
-            {
-                ZSTD_freeCCtx(cctx);
-                throw std::runtime_error(std::string("Compression error: ") +
-                                         ZSTD_getErrorName(ret));
-            }
-            output.write(outBuffer.data(), outputBuffer.pos);
-        }
-    }
-
-    outputBuffer.pos = 0;
-    size_t ret = ZSTD_endStream(cctx, &outputBuffer);
-    if (ZSTD_isError(ret))
-    {
-        ZSTD_freeCCtx(cctx);
-        throw std::runtime_error(std::string("Compression error: ") +
-                                 ZSTD_getErrorName(ret));
-    }
-    output.write(outBuffer.data(), outputBuffer.pos);
-
-    ZSTD_freeCCtx(cctx);
-}
-
-std::string ZstdFilter::advancedDecompressStream(std::istream &input)
-{
-    ZSTD_DCtx *dctx = ZSTD_createDCtx();
-    if (!dctx)
-    {
-        throw std::runtime_error("Failed to create ZSTD decompression context");
-    }
-
-    std::ostringstream output;
-
-    const size_t bufferSize = ZSTD_DStreamOutSize();
-    std::vector<char> inBuffer(bufferSize);
-    std::vector<char> outBuffer(bufferSize);
-
-    ZSTD_inBuffer inputBuffer = {inBuffer.data(), 0, 0};
-    ZSTD_outBuffer outputBuffer = {outBuffer.data(), outBuffer.size(), 0};
-
-    while (input.good())
-    {
-        input.read(inBuffer.data(), bufferSize);
-        inputBuffer.size = input.gcount();
-        inputBuffer.pos = 0;
-
-        while (inputBuffer.pos < inputBuffer.size)
-        {
-            outputBuffer.pos = 0;
-            size_t ret =
-                ZSTD_decompressStream(dctx, &outputBuffer, &inputBuffer);
-            if (ZSTD_isError(ret))
-            {
-                ZSTD_freeDCtx(dctx);
-                throw std::runtime_error(std::string("Decompression error: ") +
-                                         ZSTD_getErrorName(ret));
-            }
-            output.write(outBuffer.data(), outputBuffer.pos);
-        }
-    }
-
-    ZSTD_freeDCtx(dctx);
-}
-
