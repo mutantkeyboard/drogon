@@ -222,6 +222,38 @@ void drogon::ZstdFilter::cleanupCompressionContext()
     dDict_ = nullptr;
 }
 
+bool drogon::ZstdFilter::shouldCompress(
+    const drogon::HttpRequestPtr &req,
+    const drogon::HttpResponsePtr &resp) const
+{
+    if (!acceptZstd(req))
+        return false;
+
+    if (resp->getHeader("Content-Encoding") != "")
+    {
+        return false;
+    }
+
+    auto contentType = resp->getContentType();
+    static const std::unordered_set<drogon::ContentType> compressibleTypes = {
+        drogon::CT_TEXT_PLAIN,
+        drogon::CT_TEXT_HTML,
+        drogon::CT_APPLICATION_JSON,
+        drogon::CT_APPLICATION_XML,
+        drogon::CT_TEXT_XSL,
+        drogon::CT_TEXT_JAVASCRIPT,
+        drogon::CT_TEXT_CSS,
+        drogon::CT_APPLICATION_X_JAVASCRIPT};
+
+    return compressibleTypes.count(contentType) > 0;
+}
+
+bool drogon::ZstdFilter::acceptZstd(const drogon::HttpRequestPtr &req) const
+{
+    auto acceptEncoding = req->getHeader("Accept-Encoding");
+    return acceptEncoding.find("zstd") != std::string::npos;
+}
+
 drogon::ZstdFilter::~ZstdFilter()
 {
     cleanupCompressionContext();
@@ -231,7 +263,8 @@ void drogon::ZstdFilter::doFilter(const HttpRequestPtr &req,
                                   FilterCallback &&fcb,
                                   FilterChainCallback &&fccb)
 {
-    if (req->method() != drogon::HttpMethod::Post)
+    if (req->method() != drogon::HttpMethod::Post || drogon::HttpMethod::Put ||
+        drogon::HttpMethod::Patch)
     {
         fccb();
         return;

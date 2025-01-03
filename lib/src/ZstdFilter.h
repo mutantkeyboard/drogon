@@ -59,5 +59,8 @@ class DROGON_EXPORT ZstdFilter : public HttpFilter<ZstdFilter>
     // utility methods
     void initCompressionContext();
     void cleanupCompressionContext();
+    bool shouldCompress(const drogon::HttpRequestPtr &req,
+                        const drogon::HttpResponsePtr &resp) const;
+    bool acceptZstd(const drogon::HttpRequestPtr &req) const;
 };
 }  // namespace drogon
