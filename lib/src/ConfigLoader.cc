@@ -443,6 +443,8 @@ static void loadApp(const Json::Value &app)
     drogon::app().enableGzip(useGzip);
     auto useBr = app.get("use_brotli", false).asBool();
     drogon::app().enableBrotli(useBr);
+    auto useZstd = app.get("use_zstd", false).asBool();
+    drogon::app().enableZstd(useZstd);
     auto staticFilesCacheTime = app.get("static_files_cache_time", 5).asInt();
     drogon::app().setStaticFilesCacheTime(staticFilesCacheTime);
     loadControllers(app["simple_controllers_map"]);

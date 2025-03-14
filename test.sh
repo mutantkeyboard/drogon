@@ -33,6 +33,8 @@ function do_integration_test()
     sed -i -e "s/\"relaunch_on_error.*$/\"relaunch_on_error\": true\,/" config.example.json
     sed -i -e "s/\"threads_num.*$/\"threads_num\": 0\,/" config.example.json
     sed -i -e "s/\"use_brotli.*$/\"use_brotli\": true\,/" config.example.json
+    sed -i -e "s/\"use_zstd.*$/\"use_zstd\": true\,/" config.example.json
+
 
     if [ "$1" = "stream_mode" ]; then
         sed -i -e "s/\"enable_request_stream.*$/\"enable_request_stream\": true\,/" config.example.json

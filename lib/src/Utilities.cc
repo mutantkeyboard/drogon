@@ -20,6 +20,9 @@
 #include <brotli/decode.h>
 #include <brotli/encode.h>
 #endif
+#ifdef USE_ZSTD
+#include <zstd.h>
+#endif
 #ifdef _WIN32
 #include <rpc.h>
 #include <direct.h>
@@ -1228,6 +1231,101 @@ std::string brotliDecompress(const char * /*data*/, const size_t /*ndata*/)
                  "use brotliDecompress()";
     abort();
 }
+#endif
+
+// ZSTD
+#ifdef USE_ZSTD
+std::string zstdCompress(const char *data, const size_t ndata)
+{
+    std::string ret;
+    if (ndata == 0)
+        return ret;
+    size_t compressedSize = ZSTD_compressBound(ndata);
+    ret.resize(compressedSize);
+    auto r = ZSTD_compress((void *)ret.data(),
+                           compressedSize,
+                           data,
+                           ndata,
+                           ZSTD_maxCLevel());
+    if (ZSTD_isError(r))
+    {
+        ret.resize(0);
+    }
+    else
+    {
+        ret.resize(r);
+    }
+    return ret;
+}
+
+std::string zstdDecompress(const char *data, const size_t ndata)
+{
+    if (ndata == 0)
+        return std::string();
+
+    // Create decompression stream
+    ZSTD_DStream* zds = ZSTD_createDStream();
+    if (!zds)
+    {
+        LOG_ERROR << "Zstd decompression failed: unable to create stream";
+        return std::string();
+    }
+
+    // Input buffer
+    ZSTD_inBuffer input = { data, ndata, 0 };
+
+    // Output buffer with initial size estimate
+    std::string decompressed(ndata * 3, 0);  // Rough initial guess
+    ZSTD_outBuffer output = { decompressed.data(), decompressed.size(), 0 };
+
+    // Streaming decompression loop
+    while (input.pos < input.size)
+    {
+        size_t result = ZSTD_decompressStream(zds, &output, &input);
+        if (ZSTD_isError(result))
+        {
+            LOG_ERROR << "Zstd decompression failed: " << ZSTD_getErrorName(result);
+            ZSTD_freeDStream(zds);
+            return std::string();
+        }
+
+        if (output.pos == output.size && input.pos < input.size)
+        {
+            // Resize output buffer if more data remains
+            decompressed.resize(decompressed.size() * 2);
+            output.dst = decompressed.data();
+            output.size = decompressed.size();
+            output.pos = 0;
+        }
+
+        if (result == 0 && input.pos == input.size)
+        {
+            break;  // Decompression complete
+        }
+    }
+
+    // Clean up the stream
+    ZSTD_freeDStream(zds);
+    decompressed.resize(output.pos);  // Trim to actual decompressed size
+    return decompressed;
+}
+
+
+#else
+std::string zstdCompress(const char * /*data*/, const size_t /*ndata*/)
+{
+    LOG_ERROR << "If you do not have the zstd package installed, you cannot "
+                 "use zstdCompress()";
+    abort();
+}
+
+std::string zstdDecompress(const char * /*data*/, const size_t /*ndata*/)
+{
+    LOG_ERROR << "If you do not have the zstd package installed, you cannot "
+                 "use zstdDecompress()";
+    abort();
+}
+
 #endif
 
 std::string getMd5(const char *data, const size_t dataLen)

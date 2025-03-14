@@ -426,6 +426,21 @@ class DROGON_EXPORT HttpResponseImpl : public HttpResponse
         }
     }
 #endif
+
+#ifdef USE_ZSTD
+    void zstdDecompress()
+    {
+        if (bodyPtr_)
+        {
+            auto gunzipBody =
+                utils::zstdDecompress(bodyPtr_->data(), bodyPtr_->length());
+            removeHeaderBy("content-encoding");
+            bodyPtr_ =
+                std::make_shared<HttpMessageStringBody>(std::move(gunzipBody));
+            addHeader("content-length", std::to_string(bodyPtr_->length()));
+        }
+    }
+#endif
     ~HttpResponseImpl() override = default;
 
   protected:

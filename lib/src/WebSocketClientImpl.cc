@@ -277,6 +277,12 @@ void WebSocketClientImpl::onRecvMessage(
             resp->brDecompress();
         }
 #endif
+#ifdef USE_ZSTD
+        else if (coding == "zstd")
+        {
+            resp->zstdDecompress();
+        }
+#endif
         upgraded_ = true;
         websockConnPtr_ =
             std::make_shared<WebSocketConnectionImpl>(connPtr, false);

@@ -1268,6 +1268,29 @@ static inline HttpResponsePtr getCompressedResponse(
         return newResp;
     }
 #endif
+#ifdef USE_ZSTD
+if(app().isZstdEnabled() && req->getHeaderBy("accept-encoding").find("zstd") != std::string::npos)
+{
+    auto newResp = response;
+    auto strCompress = drogon::utils::zstdCompress(response->getBody().data(), response->getBody().length());
+    if (!strCompress.empty())
+    {
+        if (response->expiredTime() >= 0)
+        {
+            // cached response,we need to make a clone
+            newResp = std::make_shared<HttpResponseImpl>(*static_cast<HttpResponseImpl *>(response.get()));
+            newResp->setExpiredTime(-1);
+        }
+        newResp->setBody(std::move(strCompress));
+        newResp->addHeader("Content-Encoding", "zstd");
+    }
+    else
+    {
+        LOG_ERROR << "zstd got 0 length result";
+    }
+    return newResp;
+}
+#endif
     if (app().isGzipEnabled() &&
         req->getHeaderBy("accept-encoding").find("gzip") != std::string::npos)
     {

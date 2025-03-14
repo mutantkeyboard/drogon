@@ -27,6 +27,9 @@
 #ifdef USE_BROTLI
 #include <brotli/decode.h>
 #endif
+#ifdef USE_ZSTD
+#include <zstd.h>
+#endif
 
 using namespace drogon;
 
@@ -825,6 +828,13 @@ StreamDecompressStatus HttpRequestImpl::decompressBody()
         return decompressBodyBrotli();
     }
 #endif
+#ifdef USE_ZSTD
+    else if (contentEncoding == "zstd")
+    {
+        removeHeaderBy("content-encoding");
+        return decompressBodyZstd();
+    }
+#endif
     else if (contentEncoding == "gzip")
     {
         removeHeaderBy("content-encoding");
@@ -905,6 +915,90 @@ StreamDecompressStatus HttpRequestImpl::decompressBodyBrotli() noexcept
     return StreamDecompressStatus::Ok;
 }
 #endif
+
+#ifdef USE_ZSTD
+
+
+StreamDecompressStatus HttpRequestImpl::decompressBodyZstd() noexcept
+{
+    // Workaround for Windows min/max macros
+    auto minVal = [](size_t a, size_t b) { return a < b ? a : b; };
+
+    std::unique_ptr<CacheFile> cacheFileHolder;
+    std::string contentHolder;
+    std::string_view compressed;
+    if (cacheFilePtr_)
+    {
+        cacheFileHolder = std::move(cacheFilePtr_);
+        compressed = cacheFileHolder->getStringView();
+    }
+    else
+    {
+        contentHolder = std::move(content_);
+        compressed = contentHolder;
+    }
+
+    setBody("");
+    const size_t maxBodySize = HttpAppFrameworkImpl::instance().getClientMaxBodySize();
+    const size_t maxMemorySize = HttpAppFrameworkImpl::instance().getClientMaxMemoryBodySize();
+
+    // Initialize Zstd decompression stream
+    ZSTD_DStream* zds = ZSTD_createDStream();
+    if (!zds)
+    {
+        return StreamDecompressStatus::DecompressError;
+    }
+
+    // Input buffer
+    ZSTD_inBuffer input = { compressed.data(), compressed.size(), 0 };
+
+    // Output buffer
+    std::string decompressed(minVal(maxMemorySize, compressed.size() * 3), 0);
+    ZSTD_outBuffer output = { decompressed.data(), decompressed.size(), 0 };
+
+    StreamDecompressStatus status = StreamDecompressStatus::Ok;
+    while (input.pos < input.size)
+    {
+        size_t result = ZSTD_decompressStream(zds, &output, &input);
+
+        if (ZSTD_isError(result))
+        {
+            ZSTD_freeDStream(zds);
+            setBody("");
+            return StreamDecompressStatus::DecompressError;
+        }
+
+        if (output.pos > maxBodySize)
+        {
+            ZSTD_freeDStream(zds);
+            setBody("");
+            return StreamDecompressStatus::TooLarge;
+        }
+
+        if (output.pos > 0)
+        {
+            appendToBody(decompressed.data(), output.pos);
+            // Reset output buffer for next iteration
+            output.pos = 0;
+            if (input.pos < input.size && output.size < maxBodySize)
+            {
+                size_t newSize = minVal(output.size * 2, maxMemorySize);
+                decompressed.resize(newSize);
+                output.dst = decompressed.data();
+                output.size = decompressed.size();
+            }
+        }
+
+        if (result == 0 && input.pos == input.size)
+        {
+            break;  // Decompression complete
+        }
+    }
+
+    ZSTD_freeDStream(zds);
+    return status;
+}
+#endif  // USE_ZSTD
 
 StreamDecompressStatus HttpRequestImpl::decompressBodyGzip() noexcept
 {

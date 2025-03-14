@@ -336,6 +336,17 @@ class HttpAppFrameworkImpl final : public HttpAppFramework
         return useBrotli_;
     }
 
+    HttpAppFramework &enableZstd(bool useZstd) override
+    {
+        useZstd_ = useZstd;
+        return *this;
+    }
+
+    bool isZstdEnabled() const override
+    {
+        return useZstd_;
+    }
+
     HttpAppFramework &setStaticFilesCacheTime(int cacheTime) override;
     int staticFilesCacheTime() const override;
 
@@ -733,6 +744,7 @@ class HttpAppFrameworkImpl final : public HttpAppFramework
     bool useSendfile_{true};
     bool useGzip_{true};
     bool useBrotli_{false};
+    bool useZstd_{false};
     bool usingUnicodeEscaping_{true};
     std::pair<unsigned int, std::string> floatPrecisionInJson_{0,
                                                                "significant"};

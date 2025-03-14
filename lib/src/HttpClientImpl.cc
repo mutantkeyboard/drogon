@@ -561,6 +561,12 @@ void HttpClientImpl::handleResponse(
         resp->brDecompress();
     }
 #endif
+#ifdef ZSTD
+    else if (coding == "zstd")
+    {
+        resp->zstdDecompress();
+    }
+#endif
     auto cb = std::move(reqAndCb);
     pipeliningCallbacks_.pop();
     handleCookies(resp);

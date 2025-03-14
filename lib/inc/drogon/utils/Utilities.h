@@ -288,6 +288,15 @@ DROGON_EXPORT std::string brotliCompress(const char *data, const size_t ndata);
 DROGON_EXPORT std::string brotliDecompress(const char *data,
                                            const size_t ndata);
 
+/// Compress or decompress data using zstd lib.
+/**
+ * @param data the input data
+ * @param ndata the input data length
+ */
+DROGON_EXPORT std::string zstdCompress(const char *data, const size_t ndata);
+DROGON_EXPORT std::string zstdDecompress(const char *data, const size_t ndata);
+
+
 /// Get the http full date string
 /**
  * rfc2616-3.3.1

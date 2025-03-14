@@ -1151,6 +1151,18 @@ class DROGON_EXPORT HttpAppFramework : public trantor::NonCopyable
     /// Return true if brotli is enabled.
     virtual bool isBrotliEnabled() const = 0;
 
+
+    /// Enable zstd compression
+    /**
+     * @param useZstd if the parameter is true, use zstd to compress the
+     * response body's content;
+     * The default value is true.
+     */
+
+    virtual HttpAppFramework &enableZstd(bool useZstd) = 0;
+
+    /// Return true if zstd is enabled.
+    virtual bool isZstdEnabled() const = 0;
     /// Set the time in which the static file response is cached in memory.
     /**
      * @param cacheTime in seconds. 0 means always cached, negative means no

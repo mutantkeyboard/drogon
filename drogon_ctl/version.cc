@@ -65,4 +65,9 @@ void version::handleCommand(std::vector<std::string> &parameters)
 #else
     std::cout << "  yaml-cpp: no\n";
 #endif
+#ifdef USE_ZSTD
+    std::cout << "  zstd: yes\n";
+#else
+    std::cout << "  zstd: no\n";    
+#endif
 }

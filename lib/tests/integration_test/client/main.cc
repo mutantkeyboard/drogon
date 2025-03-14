@@ -1045,7 +1045,51 @@ void doTest(const HttpClientPtr &client, std::shared_ptr<test::Case> TEST_CTX)
                             CHECK(resp->body() == largeString);
                         });
 #endif
+/// Test ZSTD
+#ifdef USE_ZSTD
+    // Test Zstd response compression (Accept-Encoding)
+    req = HttpRequest::newHttpRequest();
+    req->setMethod(drogon::Get);
+    req->addHeader("accept-encoding", "zstd");
+    req->setPath("/zstd_get");
+    client->sendRequest(req,
+                        [req, TEST_CTX](ReqResult result,
+                                        const HttpResponsePtr &resp) {
+                            REQUIRE(result == ReqResult::Ok);
+                            CHECK(resp->getBody().length() == 4994UL);  // Decompressed size
+                            CHECK(resp->getHeader("Content-Encoding") == "zstd");
+                        });
 
+    // Test Zstd request decompression (Content-Encoding)
+    std::string testData = "Zstd test data";
+    req = HttpRequest::newHttpRequest();
+    req->setMethod(drogon::Post);
+    req->setPath("/zstd_echo");
+    req->addHeader("Content-Encoding", "zstd");
+    req->setBody(drogon::utils::zstdCompress(testData.c_str(), testData.size()));
+    client->sendRequest(req,
+                        [testData, TEST_CTX](ReqResult result,
+                                             const HttpResponsePtr &resp) {
+                            REQUIRE(result == ReqResult::Ok);
+                            CHECK(resp->getStatusCode() == k200OK);
+                            CHECK(resp->getBody() == testData);
+                        });
+
+    // Large Zstd request
+    std::string largeData(128 * 1024, 'b');  // 128KB
+    req = HttpRequest::newHttpRequest();
+    req->setMethod(drogon::Post);
+    req->setPath("/zstd_echo");
+    req->addHeader("Content-Encoding", "zstd");
+    req->setBody(drogon::utils::zstdCompress(largeData.c_str(), largeData.size()));
+    client->sendRequest(req,
+                        [largeData, TEST_CTX](ReqResult result,
+                                              const HttpResponsePtr &resp) {
+                            REQUIRE(result == ReqResult::Ok);
+                            CHECK(resp->getStatusCode() == k200OK);
+                            CHECK(resp->getBody() == largeData);
+                        });
+#endif
     // Test middleware
     req = HttpRequest::newHttpRequest();
     req->setPath("/test-middleware");
@@ -1252,6 +1296,75 @@ DROGON_TEST(HttpsTimeoutTest)
             });
         },
         60);
+}
+DROGON_TEST(ZstdTest)
+{
+#ifdef USE_ZSTD
+    auto client = HttpClient::newHttpClient("http://127.0.0.1:8850");
+    client->setPipeliningDepth(1);  // Single request for simplicity
+    REQUIRE(client->secure() == false);
+    REQUIRE(client->port() == 8850);
+    REQUIRE(client->host() == "127.0.0.1");
+
+    // Test 1: Zstd response compression (Accept-Encoding)
+    auto req = HttpRequest::newHttpRequest();
+    req->setMethod(drogon::Get);
+    req->setPath("/zstd/get");
+    req->addHeader("Accept-Encoding", "zstd");
+    client->sendRequest(req,
+                        [TEST_CTX](ReqResult result, const HttpResponsePtr &resp) {
+                            REQUIRE(result == ReqResult::Ok);
+                            CHECK(resp->getStatusCode() == k200OK);
+                            CHECK(resp->getHeader("Content-Encoding") == "zstd");
+                            std::string decompressed = drogon::utils::zstdDecompress(
+                                resp->getBody().data(), resp->getBody().size());
+                            CHECK(decompressed.length() == 4994UL);
+                            CHECK(decompressed == std::string(4994, 'a'));
+                        });
+
+    // Test 2: Small Zstd request decompression (Content-Encoding)
+    std::string smallData = "Zstd test data";
+    req = HttpRequest::newHttpRequest();
+    req->setMethod(drogon::Post);
+    req->setPath("/zstd/echo");
+    req->addHeader("Content-Encoding", "zstd");
+    req->setBody(drogon::utils::zstdCompress(smallData.c_str(), smallData.size()));
+    client->sendRequest(req,
+                        [smallData, TEST_CTX](ReqResult result, const HttpResponsePtr &resp) {
+                            REQUIRE(result == ReqResult::Ok);
+                            CHECK(resp->getStatusCode() == k200OK);
+                            CHECK(resp->getBody() == smallData);
+                        });
+
+    // Test 3: Large Zstd request decompression
+    std::string largeData(128 * 1024, 'b');  // 128KB
+    req = HttpRequest::newHttpRequest();
+    req->setMethod(drogon::Post);
+    req->setPath("/zstd/echo");
+    req->addHeader("Content-Encoding", "zstd");
+    req->setBody(drogon::utils::zstdCompress(largeData.c_str(), largeData.size()));
+    client->sendRequest(req,
+                        [largeData, TEST_CTX](ReqResult result, const HttpResponsePtr &resp) {
+                            REQUIRE(result == ReqResult::Ok);
+                            CHECK(resp->getStatusCode() == k200OK);
+                            CHECK(resp->getBody() == largeData);
+                        });
+
+    // Test 4: Invalid Zstd data
+    req = HttpRequest::newHttpRequest();
+    req->setMethod(drogon::Post);
+    req->setPath("/zstd/echo");
+    req->addHeader("Content-Encoding", "zstd");
+    req->setBody("invalid-zstd-data");
+    client->sendRequest(req,
+                        [TEST_CTX](ReqResult result, const HttpResponsePtr &resp) {
+                            REQUIRE(result == ReqResult::Ok);
+                            CHECK(resp->getStatusCode() == k200OK);
+                            CHECK(resp->getBody().empty());  // Should fail decompression
+                        });
+#else
+    std::cout << "Zstd not enabled, skipping ZstdTest" << std::endl;
+#endif
 }
 
 int main(int argc, char **argv)

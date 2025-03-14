@@ -12,8 +12,11 @@ option(BUILD_SHARED_LIBS "Build drogon as a shared lib" OFF)
 option(BUILD_DOC "Build Doxygen documentation" OFF)
 option(BUILD_BROTLI "Build Brotli" ON)
 option(BUILD_YAML_CONFIG "Build yaml config" ON)
+option(BUILD_ZSTD "Build Zstandard compression support" OFF)
 option(USE_SUBMODULE "Use trantor as a submodule" ON)
 option(USE_STATIC_LIBS_ONLY "Use only static libraries as dependencies" OFF)
+
+
 
 include(CMakeDependentOption)
 CMAKE_DEPENDENT_OPTION(BUILD_POSTGRESQL "Build with postgresql support" ON "BUILD_ORM" OFF)
@@ -215,6 +218,18 @@ else()
     message(STATUS "yaml-cpp not used")
 endif(BUILD_YAML_CONFIG)
 
+if (BUILD_ZSTD)
+    find_package(ZSTD)
+    if (ZSTD_FOUND)
+        message(STATUS "Zstd found")
+        add_definitions(-DUSE_ZSTD)
+        target_link_libraries(${PROJECT_NAME} PRIVATE ZSTD_lib)
+    else ()
+        message(STATUS "Zstd not found, disabling Zstd support")
+        set(BUILD_ZSTD OFF)
+    endif ()
+endif (BUILD_ZSTD)
+
 if (NOT ${CMAKE_SYSTEM_NAME} STREQUAL "FreeBSD"
     AND NOT ${CMAKE_SYSTEM_NAME} STREQUAL "OpenBSD"
     AND NOT WIN32)
@@ -396,6 +411,8 @@ if (BUILD_POSTGRESQL)
         endif (libpq_supports_batch)
     endif (pg_FOUND)
 endif (BUILD_POSTGRESQL)
+
+
 
 if (BUILD_MYSQL)
     # Find mysql, only mariadb client library is supported
@@ -805,6 +822,7 @@ install(FILES
     "${CMAKE_CURRENT_SOURCE_DIR}/cmake_modules/FindFilesystem.cmake"
     "${CMAKE_CURRENT_SOURCE_DIR}/cmake/DrogonUtilities.cmake"
     "${CMAKE_CURRENT_SOURCE_DIR}/cmake/ParseAndAddDrogonTests.cmake"
+    "${CMAKE_CURRENT_SOURCE_DIR}/cmake_modules/FindZSTD.cmake"
     DESTINATION "${INSTALL_DROGON_CMAKE_DIR}"
     COMPONENT dev)
 

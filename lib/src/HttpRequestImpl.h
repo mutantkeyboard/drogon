@@ -688,6 +688,9 @@ class HttpRequestImpl : public HttpRequest
 #ifdef USE_BROTLI
     StreamDecompressStatus decompressBodyBrotli() noexcept;
 #endif
+#ifdef USE_ZSTD
+    StreamDecompressStatus decompressBodyZstd() noexcept;
+#endif
     StreamDecompressStatus decompressBodyGzip() noexcept;
 
     static constexpr const std::string_view emptySv_{""};
